@@ -1,0 +1,6 @@
+.ccls-cache
+./run
+*.o
+*.i
+*.asm
+./test
