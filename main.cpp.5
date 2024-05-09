@@ -45,8 +45,8 @@ void draw_checkerboard(void) {
   @todo  Strictly speaking, this may result in undefined behavior
          due to overflow, we should probably use static assertion.
 */
-void draw_voxel_to_grid(uint32_t x, uint32_t y, uint32_t h, Color c)
-{
+void draw_voxel_to_grid(uint32_t x, uint32_t y, uint32_t h,
+                        Color c, Shader shader) {
   Vector3 cb_pos   = Vector3{(float)x * UNIT_SZ,
                              (float)y * UNIT_SZ,
                              (((float)h + 0.5f) * UNIT_SZ) + Z_GROUND};
@@ -55,6 +55,7 @@ void draw_voxel_to_grid(uint32_t x, uint32_t y, uint32_t h, Color c)
   DrawCubeV(cb_pos, cb_scale, cb_color);
 
   Vector3 half_sz = {UNIT_SZ / 2, UNIT_SZ / 2, UNIT_SZ / 2};
+
   Vector3 corners[8] = {
     Vector3Subtract(cb_pos, half_sz),
     {cb_pos.x - half_sz.x, cb_pos.y - half_sz.y, cb_pos.z + half_sz.z},
@@ -65,18 +66,21 @@ void draw_voxel_to_grid(uint32_t x, uint32_t y, uint32_t h, Color c)
     {cb_pos.x + half_sz.x, cb_pos.y + half_sz.y, cb_pos.z - half_sz.z},
     Vector3Add(cb_pos, half_sz)
   };
-  DrawLine3D(corners[0], corners[1], WHITE);
-  DrawLine3D(corners[0], corners[2], WHITE);
-  DrawLine3D(corners[0], corners[4], WHITE);
-  DrawLine3D(corners[3], corners[1], WHITE);
-  DrawLine3D(corners[3], corners[2], WHITE);
-  DrawLine3D(corners[3], corners[7], WHITE);
-  DrawLine3D(corners[6], corners[2], WHITE);
-  DrawLine3D(corners[6], corners[4], WHITE);
-  DrawLine3D(corners[6], corners[7], WHITE);
-  DrawLine3D(corners[5], corners[1], WHITE);
-  DrawLine3D(corners[5], corners[4], WHITE);
-  DrawLine3D(corners[5], corners[7], WHITE);
+
+  BeginShaderMode(shader);
+    DrawLine3D(corners[0], corners[1], WHITE);
+    DrawLine3D(corners[0], corners[2], WHITE);
+    DrawLine3D(corners[0], corners[4], WHITE);
+    DrawLine3D(corners[3], corners[1], WHITE);
+    DrawLine3D(corners[3], corners[2], WHITE);
+    DrawLine3D(corners[3], corners[7], WHITE);
+    DrawLine3D(corners[6], corners[2], WHITE);
+    DrawLine3D(corners[6], corners[4], WHITE);
+    DrawLine3D(corners[6], corners[7], WHITE);
+    DrawLine3D(corners[5], corners[1], WHITE);
+    DrawLine3D(corners[5], corners[4], WHITE);
+    DrawLine3D(corners[5], corners[7], WHITE);
+  EndShaderMode();
 }
 
 int main(void) {
@@ -93,6 +97,17 @@ int main(void) {
     cam.fovy       = 45.0f;
     cam.projection = CAMERA_ORTHOGRAPHIC;
 
+    // BEGIN: line anti-alias shader
+    Shader SH_aalias = LoadShader("resources/lines.vs", "resources/lines.fs");
+    SetShaderValueMatrix(SH_aalias,
+                         GetShaderLocation(SH_aalias, "mvp"),
+                         GetCameraMatrix(cam));
+    Vector4 line_color = {1.0f, 1.0f, 1.0f, 1.0f};
+    SetShaderValue(SH_aalias,
+                   GetShaderLocation(SH_aalias, "lineColor"),
+                   &line_color, SHADER_UNIFORM_VEC4);
+    // END: line anti-alias shader
+
     while (!WindowShouldClose()) {
       ClearBackground(color::darkgray);
       io_handle_mouse(&cam);
@@ -100,7 +115,7 @@ int main(void) {
         BeginMode3D(cam);
           draw_checkerboard();
           draw_voxel_to_grid(WORLD_SZ * 0.5, WORLD_SZ * 0.5, 0,
-                             color::darkgreen);
+                             color::darkgreen, SH_aalias);
         EndMode3D();
         debug_fovy(cam);
       EndDrawing();
