@@ -6,6 +6,14 @@
 
 #include "color.hpp"
 
+#define RLIGHTS_IMPLEMENTATION
+#include "rlight.h"
+#if defined(PLATFORM_DESKTOP)
+    #define GLSL_VERSION            330
+#else   // PLATFORM_ANDROID, PLATFORM_WEB
+    #define GLSL_VERSION            100
+#endif
+
 #define SCREEN_WIDTH 960
 #define SCREEN_HEIGHT 720
 
@@ -42,87 +50,13 @@ void draw_checkerboard(void) {
   }
 }
 
-Model generate_voxel_model_from_mesh(const char *texture_path) {
+Model gen_voxel_model(const char *texture_path, Shader &s) {
   Mesh mesh         = GenMeshCube(UNIT_SZ, UNIT_SZ, UNIT_SZ);
   Texture2D texture = LoadTexture(texture_path);
   Model cube        = LoadModelFromMesh(mesh);
   cube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
+  cube.materials[0].shader = s;
   return cube;
-}
-
-Model generate_voxel_model(Texture2D *ts[6]) {
-  Mesh mesh;
-  mesh.vertexCount = 24;
-  mesh.triangleCount = 12;
-
-  float verts[] = {
-    // front
-    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  0.0f, 0.0f,
-     UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
-     UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
-    -UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  0.0f, 1.0f,
-    // back
-    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
-     UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 1.0f, 0.0f,
-     UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 1.0f, 1.0f,
-    -UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
-    // top
-    -UNIT_SZ , UNIT_SZ, -UNIT_SZ,  0.0f, 0.0f,
-     UNIT_SZ , UNIT_SZ, -UNIT_SZ,  1.0f, 0.0f,
-     UNIT_SZ , UNIT_SZ, UNIT_SZ,   1.0f, 1.0f,
-    -UNIT_SZ , UNIT_SZ, UNIT_SZ,   0.0f, 1.0f,
-    // bottom
-    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
-     UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 1.0f, 0.0f,
-     UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
-    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  0.0f, 1.0f,
-    // left
-    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
-    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
-    -UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
-    -UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
-    // right
-    UNIT_SZ  , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
-    UNIT_SZ  , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
-    UNIT_SZ  ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
-    UNIT_SZ  ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
-  };
-
-  int idxs[] = {
-    0  ,  1,  2,  2,  3,  0, // front
-    4  ,  5,  6,  6,  7,  4, // back
-    8  ,  9, 10, 10, 11,  8, // top
-    12 , 13, 14, 14, 15, 12, // bottom
-    16 , 17, 18, 18, 19, 16, // left
-    20 , 21, 22, 22, 23, 20, // right
-  };
-
-  mesh.vertices = (float *)
-    MemAlloc((uint32_t)mesh.vertexCount * 3 * sizeof(float));
-
-  mesh.texcoords = (float *)
-    MemAlloc((uint32_t)mesh.vertexCount * 2 * sizeof(float));
-
-  mesh.indices = (uint16_t *)
-    MemAlloc((uint32_t)mesh.triangleCount*3*sizeof(uint16_t));
-
-  for (int i = 0; i < 3 * mesh.vertexCount; i += 3) {
-    mesh.vertices[i] = verts[i];
-    mesh.vertices[i + 1] = verts[i + 1];
-    mesh.vertices[i + 2] = verts[i + 2];
-    mesh.texcoords[i / 3 * 2] = verts[i + 3];
-    mesh.texcoords[i / 3 * 2 + 1] = verts[i + 4];
-  }
-
-  for (int i = 0; i < 3 * mesh.triangleCount; i++)
-    mesh.indices[i] = (uint16_t)idxs[i];
-
-  Model model = LoadModelFromMesh(mesh);
-
-  for (int i = 0; i < 6; i++)
-    model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture = *ts[i];
-
-  return model;
 }
 
 /**
@@ -153,16 +87,41 @@ int main(void) {
     cam.fovy       = 45.0f;
     cam.projection = CAMERA_ORTHOGRAPHIC;
 
-    Model mdl_test_vox
-      = generate_voxel_model_from_mesh("resources/textures/brick.png");
+
+    // BEGIN: shaders
+    Shader lt_shader = LoadShader(TextFormat("resources/light.vs",
+                                             GLSL_VERSION),
+                                  TextFormat("resources/light.fs",
+                                             GLSL_VERSION));
+    lt_shader.locs[SHADER_LOC_VECTOR_VIEW] =
+      GetShaderLocation(lt_shader, "viewPos");
+    int ambientLoc = GetShaderLocation(lt_shader, "ambient");
+    float lt_vals[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
+    SetShaderValue(lt_shader, ambientLoc, lt_vals, SHADER_UNIFORM_VEC4);
+
+    Light sun = CreateLight(LIGHT_POINT, Vector3{0, 0, 10},
+                            Vector3Zero(), WHITE, lt_shader);
+    sun.enabled = true;
+    UpdateLightValues(lt_shader, sun);
+    // END: shaders
+
+    Model mdl_test_vox = gen_voxel_model("resources/textures/brick.png",
+                                         lt_shader);
 
     while (!WindowShouldClose()) {
-      ClearBackground(color::darkgray);
       io_handle_mouse(&cam);
+      UpdateCamera(&cam, CAMERA_FREE);
+
+      float cam_view[3] = { cam.position.x, cam.position.y, cam.position.z };
+      SetShaderValue(lt_shader, lt_shader.locs[SHADER_LOC_VECTOR_VIEW],
+                     cam_view, SHADER_UNIFORM_VEC3);
       BeginDrawing();
+        ClearBackground(color::darkgray);
         BeginMode3D(cam);
           draw_checkerboard();
-          draw_voxel_to_grid(mdl_test_vox, WORLD_SZ * 0.5, WORLD_SZ * 0.5, 0);
+          BeginShaderMode(lt_shader);
+            draw_voxel_to_grid(mdl_test_vox, WORLD_SZ * 0.5, WORLD_SZ * 0.5, 0);
+          EndShaderMode();
         EndMode3D();
         debug_fovy(cam);
       EndDrawing();
