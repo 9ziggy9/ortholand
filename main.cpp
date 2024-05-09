@@ -2,6 +2,8 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <cstdint>
+#include <cstddef>
+
 #include "color.hpp"
 
 #define SCREEN_WIDTH 960
@@ -40,43 +42,101 @@ void draw_checkerboard(void) {
   }
 }
 
+Model generate_voxel_model_from_mesh(const char *texture_path) {
+  Mesh mesh         = GenMeshCube(UNIT_SZ, UNIT_SZ, UNIT_SZ);
+  Texture2D texture = LoadTexture(texture_path);
+  Model cube        = LoadModelFromMesh(mesh);
+  cube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
+  return cube;
+}
+
+Model generate_voxel_model(Texture2D *ts[6]) {
+  Mesh mesh;
+  mesh.vertexCount = 24;
+  mesh.triangleCount = 12;
+
+  float verts[] = {
+    // front
+    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  0.0f, 0.0f,
+     UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
+     UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
+    -UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  0.0f, 1.0f,
+    // back
+    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
+     UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 1.0f, 0.0f,
+     UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 1.0f, 1.0f,
+    -UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
+    // top
+    -UNIT_SZ , UNIT_SZ, -UNIT_SZ,  0.0f, 0.0f,
+     UNIT_SZ , UNIT_SZ, -UNIT_SZ,  1.0f, 0.0f,
+     UNIT_SZ , UNIT_SZ, UNIT_SZ,   1.0f, 1.0f,
+    -UNIT_SZ , UNIT_SZ, UNIT_SZ,   0.0f, 1.0f,
+    // bottom
+    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
+     UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 1.0f, 0.0f,
+     UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
+    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  0.0f, 1.0f,
+    // left
+    -UNIT_SZ , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
+    -UNIT_SZ , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
+    -UNIT_SZ ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
+    -UNIT_SZ ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
+    // right
+    UNIT_SZ  , -UNIT_SZ, -UNIT_SZ, 0.0f, 0.0f,
+    UNIT_SZ  , -UNIT_SZ, UNIT_SZ,  1.0f, 0.0f,
+    UNIT_SZ  ,  UNIT_SZ, UNIT_SZ,  1.0f, 1.0f,
+    UNIT_SZ  ,  UNIT_SZ, -UNIT_SZ, 0.0f, 1.0f,
+  };
+
+  int idxs[] = {
+    0  ,  1,  2,  2,  3,  0, // front
+    4  ,  5,  6,  6,  7,  4, // back
+    8  ,  9, 10, 10, 11,  8, // top
+    12 , 13, 14, 14, 15, 12, // bottom
+    16 , 17, 18, 18, 19, 16, // left
+    20 , 21, 22, 22, 23, 20, // right
+  };
+
+  mesh.vertices = (float *)
+    MemAlloc((uint32_t)mesh.vertexCount * 3 * sizeof(float));
+
+  mesh.texcoords = (float *)
+    MemAlloc((uint32_t)mesh.vertexCount * 2 * sizeof(float));
+
+  mesh.indices = (uint16_t *)
+    MemAlloc((uint32_t)mesh.triangleCount*3*sizeof(uint16_t));
+
+  for (int i = 0; i < 3 * mesh.vertexCount; i += 3) {
+    mesh.vertices[i] = verts[i];
+    mesh.vertices[i + 1] = verts[i + 1];
+    mesh.vertices[i + 2] = verts[i + 2];
+    mesh.texcoords[i / 3 * 2] = verts[i + 3];
+    mesh.texcoords[i / 3 * 2 + 1] = verts[i + 4];
+  }
+
+  for (int i = 0; i < 3 * mesh.triangleCount; i++)
+    mesh.indices[i] = (uint16_t)idxs[i];
+
+  Model model = LoadModelFromMesh(mesh);
+
+  for (int i = 0; i < 6; i++)
+    model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture = *ts[i];
+
+  return model;
+}
+
 /**
   @brief Takes uint32 and "snaps" voxel to grid.
   @todo  Strictly speaking, this may result in undefined behavior
          due to overflow, we should probably use static assertion.
 */
-void draw_voxel_to_grid(uint32_t x, uint32_t y, uint32_t h, Color c)
+void draw_voxel_to_grid(Model &m, uint32_t x, uint32_t y, uint32_t h)
 {
-  Vector3 cb_pos   = Vector3{(float)x * UNIT_SZ,
-                             (float)y * UNIT_SZ,
-                             (((float)h + 0.5f) * UNIT_SZ) + Z_GROUND};
-  Vector3 cb_scale = Vector3{UNIT_SZ, UNIT_SZ, UNIT_SZ};
-  Color   cb_color = c;
-  DrawCubeV(cb_pos, cb_scale, cb_color);
-
-  Vector3 half_sz = {UNIT_SZ / 2, UNIT_SZ / 2, UNIT_SZ / 2};
-  Vector3 corners[8] = {
-    Vector3Subtract(cb_pos, half_sz),
-    {cb_pos.x - half_sz.x, cb_pos.y - half_sz.y, cb_pos.z + half_sz.z},
-    {cb_pos.x - half_sz.x, cb_pos.y + half_sz.y, cb_pos.z - half_sz.z},
-    {cb_pos.x - half_sz.x, cb_pos.y + half_sz.y, cb_pos.z + half_sz.z},
-    {cb_pos.x + half_sz.x, cb_pos.y - half_sz.y, cb_pos.z - half_sz.z},
-    {cb_pos.x + half_sz.x, cb_pos.y - half_sz.y, cb_pos.z + half_sz.z},
-    {cb_pos.x + half_sz.x, cb_pos.y + half_sz.y, cb_pos.z - half_sz.z},
-    Vector3Add(cb_pos, half_sz)
-  };
-  DrawLine3D(corners[0], corners[1], WHITE);
-  DrawLine3D(corners[0], corners[2], WHITE);
-  DrawLine3D(corners[0], corners[4], WHITE);
-  DrawLine3D(corners[3], corners[1], WHITE);
-  DrawLine3D(corners[3], corners[2], WHITE);
-  DrawLine3D(corners[3], corners[7], WHITE);
-  DrawLine3D(corners[6], corners[2], WHITE);
-  DrawLine3D(corners[6], corners[4], WHITE);
-  DrawLine3D(corners[6], corners[7], WHITE);
-  DrawLine3D(corners[5], corners[1], WHITE);
-  DrawLine3D(corners[5], corners[4], WHITE);
-  DrawLine3D(corners[5], corners[7], WHITE);
+  DrawModel(m, Vector3{
+      (float)x * UNIT_SZ,
+      (float)y * UNIT_SZ,
+      (((float)h + 0.5f) * UNIT_SZ) + Z_GROUND
+    }, 1.0f, WHITE);
 }
 
 int main(void) {
@@ -93,14 +153,16 @@ int main(void) {
     cam.fovy       = 45.0f;
     cam.projection = CAMERA_ORTHOGRAPHIC;
 
+    Model mdl_test_vox
+      = generate_voxel_model_from_mesh("resources/textures/brick.png");
+
     while (!WindowShouldClose()) {
       ClearBackground(color::darkgray);
       io_handle_mouse(&cam);
       BeginDrawing();
         BeginMode3D(cam);
           draw_checkerboard();
-          draw_voxel_to_grid(WORLD_SZ * 0.5, WORLD_SZ * 0.5, 0,
-                             color::darkgreen);
+          draw_voxel_to_grid(mdl_test_vox, WORLD_SZ * 0.5, WORLD_SZ * 0.5, 0);
         EndMode3D();
         debug_fovy(cam);
       EndDrawing();
