@@ -1,0 +1,52 @@
+#include <iostream>
+#include <raylib.h>
+#include "color.hpp"
+
+void draw_checkerboard(void) {
+  #define CHECKERBOARD_SZ 100
+  #define CHECKER_SZ      2.0f
+  #define CHECKER_SCL     Vector3{CHECKER_SZ, CHECKER_SZ, 0.01f}
+
+  for (int y = 0; y < CHECKERBOARD_SZ; y++) {
+    for (int x = 0; x < CHECKERBOARD_SZ; x++) {
+      Vector3 p = {
+        (float)x * CHECKER_SZ - CHECKERBOARD_SZ * CHECKER_SZ / 2.0f,
+        (float)y * CHECKER_SZ - CHECKERBOARD_SZ * CHECKER_SZ / 2.0f,
+        0.0f
+      };
+      DrawCubeV(p, CHECKER_SCL, ((y + x) % 2 == 0) ? BLACK : color::darkgray);
+    }
+  }
+}
+
+int main(void) {
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
+    #define SCREEN_WIDTH 960
+    #define SCREEN_HEIGHT 720
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "ortholand");
+
+    Vector3 cb_pos   = Vector3{0.0f, 0.0f, 1.0f};
+    Vector3 cb_scale = Vector3{2.0f, 2.0f, 2.0f};
+    Color   cb_color = color::green2;
+
+    Camera3D cam;
+    cam.position   = Vector3{10.0f, 10.0f, 10.0f};
+    cam.target     = Vector3{0.0f, 0.0f, 0.0f};
+    cam.up         = Vector3{0.0f, 0.0f, 1.0f};
+    cam.fovy       = 22.5f;
+    cam.projection = CAMERA_ORTHOGRAPHIC;
+
+    while (!WindowShouldClose()) {
+      ClearBackground(color::darkgray);
+      BeginDrawing();
+        BeginMode3D(cam);
+          draw_checkerboard();
+          DrawCubeV(cb_pos, cb_scale, cb_color);
+          DrawCubeWiresV(cb_pos, cb_scale, color::white);
+      EndMode3D();
+      EndDrawing();
+    }
+
+    CloseWindow();
+    return EXIT_SUCCESS;
+}
