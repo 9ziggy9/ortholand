@@ -6,3 +6,4 @@
 ./test
 run
 256x256/
+main.cpp.*[0-9]
