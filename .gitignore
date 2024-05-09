@@ -5,3 +5,4 @@
 *.asm
 ./test
 run
+256x256/
